@@ -12,7 +12,31 @@
 
 ## Implementation specs
 
+### Relative Stability (Pegged)
+
 We'll maintain relative stability through [Chainlink Price Feeds](https://docs.chain.link/data-feeds/price-feeds)
+We'll set a function to exchange ETH & BTC for $$$
+
+### Stability Mechanism (Algorithmic)
+
+Can only mint the stablecoin with enough collateral (overcollateralized)
+
+### Collateral (Exogenous)
+
+- wETH
+- wBTC
+
+---
+
+## Libs
+
+`openzeppelin-contracts`
+
+```
+forge install openzeppelin/openzeppelin-contracts --no-commit
+```
+
+---
 
 ## Foundry
 
