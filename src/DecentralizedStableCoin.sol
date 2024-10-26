@@ -6,7 +6,7 @@ import {ERC20Burnable, ERC20} from "@openzeppelin/contracts/token/ERC20/extensio
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
- * @title Stable Coin
+ * @title Decentralized Stable Coin
  * @author Mattia Papa
  * @dev Collateral: Exogenous (wBTC and wETH)
  * @dev Minting and Burning: Algorithmic
@@ -16,23 +16,23 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
  * @dev Ownable must be declared with an address of the contract owner
     as a parameter.
  */
-contract StableCoin is ERC20Burnable, Ownable {
-    error StableCoin_MustBeGreaterThanZero();
-    error StableCoin_BurnAmountExceedsBalance();
-    error StableCoin_CannotMintToZeroAddress();
+contract DecentralizedStableCoin is ERC20Burnable, Ownable {
+    error DecentralizedStableCoin_MustBeGreaterThanZero();
+    error DecentralizedStableCoin_BurnAmountExceedsBalance();
+    error DecentralizedStableCoin_CannotMintToZeroAddress();
 
     constructor()
-        ERC20("StableCoin", "DSC")
+        ERC20("DecentralizedStableCoin", "DSC")
         Ownable(0x9c03Ce240E2D6EEB70B7Ebe73B1289EF4ecBF5A6)
     {}
 
     function burn(uint256 _amount) public override onlyOwner {
         uint256 balance = balanceOf(msg.sender);
         if (_amount <= 0) {
-            revert StableCoin_MustBeGreaterThanZero();
+            revert DecentralizedStableCoin_MustBeGreaterThanZero();
         }
         if (balance < _amount) {
-            revert StableCoin_BurnAmountExceedsBalance();
+            revert DecentralizedStableCoin_BurnAmountExceedsBalance();
         }
         // "super" keyword is used to access the burn function of the parent contract (ERC20Burnable)
         super.burn(_amount);
@@ -43,10 +43,10 @@ contract StableCoin is ERC20Burnable, Ownable {
         uint256 _amount
     ) external onlyOwner returns (bool) {
         if (_to == address(0)) {
-            revert StableCoin_CannotMintToZeroAddress();
+            revert DecentralizedStableCoin_CannotMintToZeroAddress();
         }
         if (_amount <= 0) {
-            revert StableCoin_MustBeGreaterThanZero();
+            revert DecentralizedStableCoin_MustBeGreaterThanZero();
         }
         _mint(_to, _amount);
         return true;
