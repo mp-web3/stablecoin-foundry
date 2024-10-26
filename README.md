@@ -39,6 +39,12 @@ Can only mint the stablecoin with enough collateral (overcollateralized)
 
 ---
 
+### Chainlink Price Feed
+
+- [ETH-USD Price Feed Details Mainnet](https://docs.chain.link/data-feeds/price-feeds/addresses?network=ethereum&page=6)
+
+It has 8 decimals
+
 ## Libs
 
 ### openzeppelin

@@ -23,6 +23,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine_NotAllowedToken();
     error DSCEngine_TokenAddressesAndPriceFeedAddressesMustBeSameLength();
     error DSCEngine_TransferFailed();
+    error DSCEngine_MintFailed();
 
     //// STATE VARIABLES ////
 
@@ -130,6 +131,10 @@ contract DSCEngine is ReentrancyGuard {
         s_mintedDSC[msg.sender] += amountToMintDSC;
 
         _revertIfHealthFactorBelowThreshold(msg.sender);
+        bool minted = i_dsc.mint(msg.sender, amountToMintDSC);
+        if (!minted) {
+            revert DSCEngine_MintFailed();
+        }
     }
 
     function burnDSC() external {}
