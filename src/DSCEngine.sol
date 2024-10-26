@@ -26,6 +26,15 @@ contract DSCEngine is ReentrancyGuard {
 
     //// STATE VARIABLES ////
 
+    /**
+     * @dev FEED_PRECISION is used to convert the price from the Chainlink Price Feeds to the desired precision
+     * @dev PRECISION is used to convert the price from the Chainlink Price Feeds to the desired precision
+     * @dev LIQUIDATION_THRESHOLD is the overcollateralization ratio
+     * @dev LIQUIDATION_PRECISION is used to convert the liquidation threshold to the desired precision
+     * @dev Since the price of ETH/USD and BTC/USD returned by Chainlink Price Feed is expressed with 8 decimals
+     * @dev and we use as standard ETH decimals (1e18), we need to multiply the price returned by Chainlink for 1e10 (FEED_PRECISION)
+     * @dev to get the price in the desired precision (1e18).
+     */
     uint256 private constant FEED_PRECISION = 1e10;
     uint256 private constant PRECISION = 1e18;
     uint256 private constant LIQUIDATION_THRESHOLD = 50; // 200% overcollateralization
@@ -38,7 +47,7 @@ contract DSCEngine is ReentrancyGuard {
      */
     mapping(address token => address priceFeed) private s_priceFeeds;
     mapping(address user => mapping(address token => uint256 amount)) private s_collateralDeposited;
-    mapping(address user => uint256 amountDSCMinted) private s_dscMinted;
+    mapping(address user => uint256 mintedAmountDSC) private s_mintedDSC;
 
     address[] private s_collateralTokens;
 
@@ -115,10 +124,10 @@ contract DSCEngine is ReentrancyGuard {
 
     /**
      * @notice Mint DSC. Not all the deposited collateral has to be used to mint DSC.
-     * @param amountDSCToMint The amount of DSC to mint
+     * @param amountToMintDSC The amount of DSC to mint
      */
-    function mintDSC(uint256 amountDSCToMint) external moreThanZero(amountDSCToMint) nonReentrant {
-        s_dscMinted[msg.sender] += amountDSCToMint;
+    function mintDSC(uint256 amountToMintDSC) external moreThanZero(amountToMintDSC) nonReentrant {
+        s_mintedDSC[msg.sender] += amountToMintDSC;
 
         _revertIfHealthFactorBelowThreshold(msg.sender);
     }
@@ -136,7 +145,7 @@ contract DSCEngine is ReentrancyGuard {
         view
         returns (uint256 totalMintedDSC, uint256 collateralValueInUSD)
     {
-        totalMintedDSC = s_dscMinted[user];
+        totalMintedDSC = s_mintedDSC[user];
         collateralValueInUSD = getAccountCollateralValueInUSD(user);
     }
 
@@ -145,11 +154,12 @@ contract DSCEngine is ReentrancyGuard {
      * @notice If the uuser health factor goes below the treshold(1), the position can be liquidated.
      * @param user The address of the user
      * @dev Health factor example:
-     * @dev User has 10 ETH, assuming 1 ETH = 1000 USD, it has a collateral value of 10,000 USD.
-     * @dev User has totalDSC 2,000 DSC.
-     * @dev LIQUIDATION_TRESHOLD is 50 (200% overcollateralization ratio).
-     * @dev LIQUIDATION_PRECISION is set to 100
-     * @dev collateralAdjustedForTreshold = 10,000 (collateral value in USD) * 50 (treshold) / 100 (LIQUIDATION_PRECISION) = 5,000
+     * @dev User has 10 ETH, assuming 1 ETH = 1000 USD, collateralValueInUSD = 10,000 * 1e18
+     * @dev User totalMintedDSC = 2,000
+     * @dev LIQUIDATION_TRESHOLD = 50 (200% overcollateralization ratio).
+     * @dev LIQUIDATION_PRECISION = 100
+     * @dev collateralAdjustedForTreshold = 10,000 * 1e18 (collateralValueInUSD) * 50 (LIQUIDATION_TRESHOLD) / 100 (LIQUIDATION_PRECISION) = (500,000 * 1e18) / 100 = 5,000 * 1e18
+     * @dev healthFactor = (5,000 * 1e18) / 2,000 = 2,500 * 1e18
      * @dev Finally the health factor =
      * @return The health factor of the user
      */
@@ -178,10 +188,22 @@ contract DSCEngine is ReentrancyGuard {
         return totalCollateralValueInUSD;
     }
 
+    /**
+     * @notice Get the value of the token in USD
+     * @param token The address of the token
+     * @param amount The amount of the token
+     * @dev price of ETH/USD and BTC/USD has 8 decimals
+     * @dev assuming: token = ETH (1e18 decimals); 1 ETH = 1000 USD; FEED_PRECISION = 1e10; PRECISION = 1e18; amount = 10*1e18 (10 ETH)
+     * @dev price = 1000 * 1e8 --> 100,000,000,000
+     * @dev price * FEED_PRECISION = 100,000,000,000 * 1e10 = 1,000,000,000,000,000,000,000 = 1000 * 1e18
+     * @dev tokenValueInUSD = [((1000 * 1e18) * (10 * 1e18) / 1e18 = (10,000 * 1e36) / 1e18 = 10,000 * 1e18
+     * @dev tokenValueInUSD = 10,000 * 1e18 = 10,000 USD
+     * @return tokenValueInUSD The value of the token in USD
+     */
     function getTokenValueInUSD(address token, uint256 amount) public view returns (uint256 tokenValueInUSD) {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
         (, int256 price,,,) = priceFeed.latestRoundData();
         tokenValueInUSD = ((uint256(price) * FEED_PRECISION) * amount) / PRECISION;
-        return tokenValueInUSD;
+        return tokenValueInUSD; // expressed in 1e18
     }
 }
