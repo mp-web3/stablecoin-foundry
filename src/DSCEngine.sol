@@ -26,8 +26,10 @@ contract DSCEngine is ReentrancyGuard {
 
     //// STATE VARIABLES ////
 
-    uint256 private constant FEED_PRECISE_UNIT = 1e10;
-    uint256 private constant PRECISE_UNIT = 1e18;
+    uint256 private constant FEED_PRECISION = 1e10;
+    uint256 private constant PRECISION = 1e18;
+    uint256 private constant LIQUIDATION_THRESHOLD = 50; // 200% overcollateralization
+    uint256 private constant LIQUIDATION_PRECISION = 100;
 
     /**
      * @dev Using the Chainlink Price Feeds to get the price of the collateral token
@@ -36,7 +38,7 @@ contract DSCEngine is ReentrancyGuard {
      */
     mapping(address token => address priceFeed) private s_priceFeeds;
     mapping(address user => mapping(address token => uint256 amount)) private s_collateralDeposited;
-    mapping(address user => uint256 amountDscMinted) private s_dscMinted;
+    mapping(address user => uint256 amountDSCMinted) private s_dscMinted;
 
     address[] private s_collateralTokens;
 
@@ -107,16 +109,16 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
-    function redeemCollateralForDsc() external {}
+    function redeemCollateralForDSC() external {}
 
     function redeemCollateral() external {}
 
     /**
      * @notice Mint DSC. Not all the deposited collateral has to be used to mint DSC.
-     * @param amountDscToMint The amount of DSC to mint
+     * @param amountDSCToMint The amount of DSC to mint
      */
-    function mintDSC(uint256 amountDscToMint) external moreThanZero(amountDscToMint) nonReentrant {
-        s_dscMinted[msg.sender] += amountDscToMint;
+    function mintDSC(uint256 amountDSCToMint) external moreThanZero(amountDSCToMint) nonReentrant {
+        s_dscMinted[msg.sender] += amountDSCToMint;
 
         _revertIfHealthFactorBelowThreshold(msg.sender);
     }
@@ -132,9 +134,9 @@ contract DSCEngine is ReentrancyGuard {
     function _getAccountInformation(address user)
         private
         view
-        returns (uint256 totalDscMinted, uint256 collateralValueInUSD)
+        returns (uint256 totalMintedDSC, uint256 collateralValueInUSD)
     {
-        totalDscMinted = s_dscMinted[user];
+        totalMintedDSC = s_dscMinted[user];
         collateralValueInUSD = getAccountCollateralValueInUSD(user);
     }
 
@@ -142,10 +144,19 @@ contract DSCEngine is ReentrancyGuard {
      * @notice Calculate the health factor of a user.
      * @notice If the uuser health factor goes below the treshold(1), the position can be liquidated.
      * @param user The address of the user
+     * @dev Health factor example:
+     * @dev User has 10 ETH, assuming 1 ETH = 1000 USD, it has a collateral value of 10,000 USD.
+     * @dev User has totalDSC 2,000 DSC.
+     * @dev LIQUIDATION_TRESHOLD is 50 (200% overcollateralization ratio).
+     * @dev LIQUIDATION_PRECISION is set to 100
+     * @dev collateralAdjustedForTreshold = 10,000 (collateral value in USD) * 50 (treshold) / 100 (LIQUIDATION_PRECISION) = 5,000
+     * @dev Finally the health factor =
      * @return The health factor of the user
      */
     function _healthFactor(address user) private view returns (uint256) {
-        (uint256 totalDscMinted, uint256 collateralValueInUSD) = _getAccountInformation(user);
+        (uint256 totalMintedDSC, uint256 collateralValueInUSD) = _getAccountInformation(user);
+        uint256 collateralAdjustedForTreshold = (collateralValueInUSD * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
+        return (collateralAdjustedForTreshold * PRECISION) / totalMintedDSC;
     }
 
     function _revertIfHealthFactorBelowThreshold(address user) internal view {}
@@ -170,7 +181,7 @@ contract DSCEngine is ReentrancyGuard {
     function getTokenValueInUSD(address token, uint256 amount) public view returns (uint256 tokenValueInUSD) {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
         (, int256 price,,,) = priceFeed.latestRoundData();
-        tokenValueInUSD = ((uint256(price) * FEED_PRECISE_UNIT) * amount) / PRECISE_UNIT;
+        tokenValueInUSD = ((uint256(price) * FEED_PRECISION) * amount) / PRECISION;
         return tokenValueInUSD;
     }
 }
