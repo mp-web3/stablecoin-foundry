@@ -5,6 +5,7 @@ pragma solidity ^0.8.18;
 import {DecentralizedStableCoin} from "./DecentralizedStableCoin.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
 /**
  * @title DSCEngine
@@ -25,16 +26,19 @@ contract DSCEngine is ReentrancyGuard {
 
     //// STATE VARIABLES ////
 
+    uint256 private constant FEED_PRECISE_UNIT = 1e10;
+    uint256 private constant PRECISE_UNIT = 1e18;
+
     /**
      * @dev Using the Chainlink Price Feeds to get the price of the collateral token
      * @dev instead of having a separate mapping(address => bool) to check if the token is supported
      * @dev we can use the priceFeed mapping to check if the token is supported
      */
     mapping(address token => address priceFeed) private s_priceFeeds;
-
     mapping(address user => mapping(address token => uint256 amount)) private s_collateralDeposited;
-
     mapping(address user => uint256 amountDscMinted) private s_dscMinted;
+
+    address[] private s_collateralTokens;
 
     DecentralizedStableCoin private immutable i_dsc;
 
@@ -74,6 +78,7 @@ contract DSCEngine is ReentrancyGuard {
 
         for (uint256 i = 0; i < tokenAddresses.length; i++) {
             s_priceFeeds[tokenAddresses[i]] = priceFeedAddresses[i];
+            s_collateralTokens.push(tokenAddresses[i]);
         }
 
         i_dsc = DecentralizedStableCoin(dscAddress);
@@ -151,7 +156,21 @@ contract DSCEngine is ReentrancyGuard {
      * @dev This function loops through all the collateral tokens and maps it to the price
      * @dev from the Chainlink Price Feeds to get the total value of the collateral in USD
      * @param user The address of the user
-     * @return The value of the collateral in USD
+     * @return totalCollateralValueInUSD The total value of the collateral in USD
      */
-    function getAccountCollateralValueInUSD(address user) public view returns (uint256) {}
+    function getAccountCollateralValueInUSD(address user) public view returns (uint256 totalCollateralValueInUSD) {
+        for (uint256 i = 0; i < s_collateralTokens.length; i++) {
+            address token = s_collateralTokens[i];
+            uint256 amount = s_collateralDeposited[user][token];
+            totalCollateralValueInUSD += getTokenValueInUSD(token, amount);
+        }
+        return totalCollateralValueInUSD;
+    }
+
+    function getTokenValueInUSD(address token, uint256 amount) public view returns (uint256 tokenValueInUSD) {
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
+        (, int256 price,,,) = priceFeed.latestRoundData();
+        tokenValueInUSD = ((uint256(price) * FEED_PRECISE_UNIT) * amount) / PRECISE_UNIT;
+        return tokenValueInUSD;
+    }
 }

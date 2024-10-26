@@ -4,4 +4,4 @@ out = "out"
 libs = ["lib"]
 
 # Custom Remappings
-remappings = ["@openzeppelin/contracts=lib/openzeppelin-contracts/contracts"]
+remappings = ["@chainlink/contracts=lib/chainlink-brownie-contracts/contracts/","@openzeppelin/contracts=lib/openzeppelin-contracts/contracts/"]
