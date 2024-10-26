@@ -34,6 +34,8 @@ contract DSCEngine is ReentrancyGuard {
 
     mapping(address user => mapping(address token => uint256 amount)) private s_collateralDeposited;
 
+    mapping(address user => uint256 amountDscMinted) private s_dscMinted;
+
     DecentralizedStableCoin private immutable i_dsc;
 
     //// EVENTS ////
@@ -104,11 +106,52 @@ contract DSCEngine is ReentrancyGuard {
 
     function redeemCollateral() external {}
 
-    function mintDSC() external {}
+    /**
+     * @notice Mint DSC. Not all the deposited collateral has to be used to mint DSC.
+     * @param amountDscToMint The amount of DSC to mint
+     */
+    function mintDSC(uint256 amountDscToMint) external moreThanZero(amountDscToMint) nonReentrant {
+        s_dscMinted[msg.sender] += amountDscToMint;
+
+        _revertIfHealthFactorBelowThreshold(msg.sender);
+    }
 
     function burnDSC() external {}
 
     function liquidate() external {}
 
     function getHealthFactor() external view {}
+
+    //// PRIVATE & INTERNAL FUNCTIONS ////
+
+    function _getAccountInformation(address user)
+        private
+        view
+        returns (uint256 totalDscMinted, uint256 collateralValueInUSD)
+    {
+        totalDscMinted = s_dscMinted[user];
+        collateralValueInUSD = getAccountCollateralValueInUSD(user);
+    }
+
+    /**
+     * @notice Calculate the health factor of a user.
+     * @notice If the uuser health factor goes below the treshold(1), the position can be liquidated.
+     * @param user The address of the user
+     * @return The health factor of the user
+     */
+    function _healthFactor(address user) private view returns (uint256) {
+        (uint256 totalDscMinted, uint256 collateralValueInUSD) = _getAccountInformation(user);
+    }
+
+    function _revertIfHealthFactorBelowThreshold(address user) internal view {}
+
+    //// PUBLIC & EXTERNAL VIEW FUNCTIONS ////
+    /**
+     * @notice Get the total value of the collateral in USD
+     * @dev This function loops through all the collateral tokens and maps it to the price
+     * @dev from the Chainlink Price Feeds to get the total value of the collateral in USD
+     * @param user The address of the user
+     * @return The value of the collateral in USD
+     */
+    function getAccountCollateralValueInUSD(address user) public view returns (uint256) {}
 }

@@ -1,5 +1,16 @@
 # Stablecoin Foundry
 
+## Resources
+
+### **Aave** Liquidation, Health Factor and Risk Paramenters
+
+- [Aave Protocol Parameter Dashboard](https://aave.com/docs/resources/parameters)
+- [Aave Health Factor Simulation Tool](https://defisim.xyz/)
+- [Aave Liquidation dev docs](https://aave.com/docs/concepts/liquidations)
+- [DeFi Saver](https://defisaver.com/)
+  > DeFi Saver is a non-custodial DeFi management tool offering advanced features and functionalities for managing your positions and crypto assets in various DeFi protocols
+- [Liquidations/Liquidator dev docs](https://aave.com/docs/developers/liquidations#calculating-profitability-vs-gas-cost)
+
 ## Our Stablecoin Features
 
 1. Relative Stability: Anchored/Pegged to $
@@ -37,6 +48,15 @@ forge install openzeppelin/openzeppelin-contracts --no-commit
 ```
 
 ---
+
+## Liquidation, Health Factor and Risk Paramenters
+
+- [Aave Protocol Parameter Dashboard](https://aave.com/docs/resources/parameters)
+- [Aave Health Factor Simulation Tool](https://defisim.xyz/)
+- [Aave Liquidation dev docs](https://aave.com/docs/concepts/liquidations)
+- [DeFi Saver](https://defisaver.com/)
+  > DeFi Saver is a non-custodial DeFi management tool offering advanced features and functionalities for managing your positions and crypto assets in various DeFi protocols
+- [Liquidations/Liquidator dev docs](https://aave.com/docs/developers/liquidations#calculating-profitability-vs-gas-cost)
 
 ## Foundry
 
