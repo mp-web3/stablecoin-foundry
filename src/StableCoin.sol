@@ -22,7 +22,7 @@ contract StableCoin is ERC20Burnable, Ownable {
     error StableCoin_CannotMintToZeroAddress();
 
     constructor()
-        ERC20("StableCoin", "SC")
+        ERC20("StableCoin", "DSC")
         Ownable(0x9c03Ce240E2D6EEB70B7Ebe73B1289EF4ecBF5A6)
     {}
 
