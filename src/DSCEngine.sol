@@ -10,13 +10,26 @@ import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/Ag
 /**
  * @title DSCEngine
  * @author Mattia Papa
- * @dev This contract implements the mechanisms to maintain a 1:1 peg with USD.
- * @dev The stablecoin is algoritmically stable, pegged to the dollar and overcollateralized by wBTC and wETH.
  * @notice This contract is the core of the DSC System. It handles all of the logic for:
  * @notice minting and redeeming DSC, as well as depositing and withdrawing collateral.
+ * @dev This contract implements the mechanisms to maintain a 1:1 peg with USD.
+ * @dev The stablecoin is algoritmically stable, pegged to the dollar and overcollateralized by wBTC and wETH.
  */
 contract DSCEngine is ReentrancyGuard {
-    function depositCollateralAndMintDSC() external {}
+    /**
+     * @notice Deposit collateral and mint DSC in one transaction
+     * @param tokenCollateralAddress The addresses of the supported tokens
+     * @param amountCollateral The amount of collateral to deposit
+     * @param amountToMintDSC The amount of DSC to mint
+     */
+    function depositCollateralAndMintDSC(
+        address tokenCollateralAddress,
+        uint256 amountCollateral,
+        uint256 amountToMintDSC
+    ) external {
+        depositCollateral(tokenCollateralAddress, amountCollateral);
+        mintDSC(amountToMintDSC);
+    }
 
     //// ERRORS ////
     error DSCEngine_NeedsMoreThanZero();
@@ -24,6 +37,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine_TokenAddressesAndPriceFeedAddressesMustBeSameLength();
     error DSCEngine_TransferFailed();
     error DSCEngine_MintFailed();
+    error DSCEngine_HealthFactorBelowThreshold(uint256 userHealthFactor);
 
     //// STATE VARIABLES ////
 
@@ -36,6 +50,7 @@ contract DSCEngine is ReentrancyGuard {
      * @dev and we use as standard ETH decimals (1e18), we need to multiply the price returned by Chainlink for 1e10 (FEED_PRECISION)
      * @dev to get the price in the desired precision (1e18).
      */
+    uint256 public constant MIN_HEALTH_FACTOR = 1;
     uint256 private constant FEED_PRECISION = 1e10;
     uint256 private constant PRECISION = 1e18;
     uint256 private constant LIQUIDATION_THRESHOLD = 50; // 200% overcollateralization
@@ -56,6 +71,7 @@ contract DSCEngine is ReentrancyGuard {
 
     //// EVENTS ////
     event CollateralDeposited(address indexed user, address indexed token, uint256 indexed amount);
+    event CollateralRedeemed(address indexed user, address indexed token, uint256 indexed amount);
 
     //// MODIFIERS ////
 
@@ -105,7 +121,7 @@ contract DSCEngine is ReentrancyGuard {
      * @param amountCollateral The amount of collateral to deposit
      */
     function depositCollateral(address tokenCollateralAddress, uint256 amountCollateral)
-        external
+        public
         moreThanZero(amountCollateral)
         isAllowedToken(tokenCollateralAddress)
         nonReentrant
@@ -119,15 +135,44 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
-    function redeemCollateralForDSC() external {}
+    /**
+     * @notice Burn DSC and redeem collateral in one transaction
+     * @param tokenCollateralAddress The address of the collateral token
+     * @param amountCollateralToRedeem The amount of collateral to redeem
+     * @param amountDSCToBurn The amount of DSC to burn
+     */
+    function burnDSCandRedeemCollateral(
+        address tokenCollateralAddress,
+        uint256 amountCollateralToRedeem,
+        uint256 amountDSCToBurn
+    ) external {
+        burnDSC(amountDSCToBurn);
+        redeemCollateral(tokenCollateralAddress, amountCollateralToRedeem);
+        // Check for helth factor is in redeemCollateral() so no need to add it again here
+    }
 
-    function redeemCollateral() external {}
+    // 1. health factor must be above the threshold (1) after the collateral is redeemed
+    function redeemCollateral(address tokenCollateralAddress, uint256 amountCollateral)
+        public
+        moreThanZero(amountCollateral)
+        nonReentrant
+    {
+        s_collateralDeposited[msg.sender][tokenCollateralAddress] -= amountCollateral;
+        emit CollateralRedeemed(msg.sender, tokenCollateralAddress, amountCollateral);
+        bool success = IERC20(tokenCollateralAddress).transfer(msg.sender, amountCollateral);
+
+        if (!success) {
+            revert DSCEngine_TransferFailed();
+        }
+
+        _revertIfHealthFactorBelowThreshold(msg.sender);
+    }
 
     /**
      * @notice Mint DSC. Not all the deposited collateral has to be used to mint DSC.
      * @param amountToMintDSC The amount of DSC to mint
      */
-    function mintDSC(uint256 amountToMintDSC) external moreThanZero(amountToMintDSC) nonReentrant {
+    function mintDSC(uint256 amountToMintDSC) public moreThanZero(amountToMintDSC) nonReentrant {
         s_mintedDSC[msg.sender] += amountToMintDSC;
 
         _revertIfHealthFactorBelowThreshold(msg.sender);
@@ -137,7 +182,18 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
-    function burnDSC() external {}
+    function burnDSC(uint256 amountToBurnDSC) public moreThanZero(amountToBurnDSC) {
+        s_mintedDSC[msg.sender] -= amountToBurnDSC;
+        bool success = i_dsc.transferFrom(msg.sender, address(this), amountToBurnDSC);
+
+        if (!success) {
+            revert DSCEngine_TransferFailed();
+        }
+        i_dsc.burn(amountToBurnDSC);
+        // It should not be necessary to check the health factor here
+        // We'll check it during audit and gas optimization
+        _revertIfHealthFactorBelowThreshold(msg.sender);
+    }
 
     function liquidate() external {}
 
@@ -174,7 +230,12 @@ contract DSCEngine is ReentrancyGuard {
         return (collateralAdjustedForTreshold * PRECISION) / totalMintedDSC;
     }
 
-    function _revertIfHealthFactorBelowThreshold(address user) internal view {}
+    function _revertIfHealthFactorBelowThreshold(address user) internal view {
+        uint256 userHealthFactor = _healthFactor(user);
+        if (userHealthFactor < MIN_HEALTH_FACTOR) {
+            revert DSCEngine_HealthFactorBelowThreshold(userHealthFactor);
+        }
+    }
 
     //// PUBLIC & EXTERNAL VIEW FUNCTIONS ////
     /**
