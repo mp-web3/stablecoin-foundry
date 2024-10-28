@@ -38,6 +38,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine_TransferFailed();
     error DSCEngine_MintFailed();
     error DSCEngine_HealthFactorBelowThreshold(uint256 userHealthFactor);
+    error DSCEngine_NotHelthFactorBelowThreshold();
 
     //// STATE VARIABLES ////
 
@@ -50,11 +51,12 @@ contract DSCEngine is ReentrancyGuard {
      * @dev and we use as standard ETH decimals (1e18), we need to multiply the price returned by Chainlink for 1e10 (FEED_PRECISION)
      * @dev to get the price in the desired precision (1e18).
      */
-    uint256 public constant MIN_HEALTH_FACTOR = 1;
+    uint256 public constant MIN_HEALTH_FACTOR = 1e18;
     uint256 private constant FEED_PRECISION = 1e10;
     uint256 private constant PRECISION = 1e18;
     uint256 private constant LIQUIDATION_THRESHOLD = 50; // 200% overcollateralization
     uint256 private constant LIQUIDATION_PRECISION = 100;
+    uint256 private constant LIQUIDATOR_BONUS = 10; // This mean a 10% bonus for the liquidator
 
     /**
      * @dev Using the Chainlink Price Feeds to get the price of the collateral token
@@ -195,7 +197,38 @@ contract DSCEngine is ReentrancyGuard {
         _revertIfHealthFactorBelowThreshold(msg.sender);
     }
 
-    function liquidate() external {}
+    // If someone is almost undercollateralized, anyone can liquidate the position
+    // Example: 75$ worth of ETH, backing 100$ worth of DSC
+    // Health factor = 75 / 100 = 0.75 !!!Below the threshold!!!
+    // Liquidator burns 75$ worth of DSC and redeems 100$ worth of ETH
+    /**
+     * @notice Liquidate a position
+     * @notice If the user health factor goes below the threshold(1), the position can be liquidated
+     * @notice Partial liquidation is allowed
+     * @param collateral The address of the collateral token
+     * @param user The address of the user
+     * @param debtToCover The amount of DSC to burn
+     */
+    function liquidate(address collateral, address user, uint256 debtToCover)
+        external
+        moreThanZero(debtToCover)
+        nonReentrant
+    {
+        uint256 startingUserHealthFactor = _healthFactor(user);
+        if (startingUserHealthFactor >= MIN_HEALTH_FACTOR) {
+            revert DSCEngine_NotHelthFactorBelowThreshold();
+        }
+        // Now burn the DSC debt, and redeem the collateral
+        // Example of a "bad position": as before, 75$ worth of ETH, backing 100$ worth of DSC, health factor = 0.75
+        // debtToCover = 75$ worth of DSC
+        // 75$ of DSC == ETH ??? -> How much ETH are we giving to liquidator? -> 0.0375 ETH (assuming 1 ETH = 2000$)
+        uint256 tokenAmountFromDebtCovered = getTokenAmountFromUSD(collateral, debtToCover);
+        // Add a 10% bonus to the liquidator, the remaining collateral woill go to treasury (To implement)
+        // 75$ (debtToCover) / 2000 (price of ETH in USD) = 0.0375 ETH (This is the corresponding amount of ETH to give to the liquidator for covering the debt)
+        // Now we want to add a 10% bonus to the liquidator
+        // bonusCollateral = 0.0375 * 10 / 100 = 0.00375 ETH
+        uint256 bonusCollateral = (tokenAmountFromDebtCovered * LIQUIDATOR_BONUS) / LIQUIDATION_PRECISION;
+    }
 
     function getHealthFactor() external view {}
 
@@ -238,6 +271,16 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     //// PUBLIC & EXTERNAL VIEW FUNCTIONS ////
+
+    function getTokenAmountFromUSD(address token, uint256 amountUSDInWei) public view returns (uint256) {
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
+        (, int256 price,,,) = priceFeed.latestRoundData();
+        // Example 10e18 (amountUSDInWei) * 1e18 (PRECISION) / 2000e8 (price of ETH in USD) * 1e10 (FEED_PRECISION)
+        // 10e18 * 1e18 / 2000 * 1e18 = 10e18 / 2000 = 10e18 / 2e3 = 5e15 = 0.005 ETH
+
+        return (amountUSDInWei * PRECISION) / (uint256(price) * FEED_PRECISION);
+    }
+
     /**
      * @notice Get the total value of the collateral in USD
      * @dev This function loops through all the collateral tokens and maps it to the price
